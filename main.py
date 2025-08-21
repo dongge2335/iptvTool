@@ -9,7 +9,7 @@ def main():
 
     parser.add_argument("--fetch", action="store_true", help="抓取 IPTV 原始数据")
     parser.add_argument("--process", action="store_true", help="生成 iptv.json")
-    parser.add_argument("--m3u", choices=["uni", "mul", "all"], help="生成播放列表模式")
+    parser.add_argument("--m3u", choices=["uni", "mul", "all"], help="生成m3u播放列表")
     parser.add_argument("--sort-file", default="sort.txt", help="排序文件路径（默认：sort.txt）")
     parser.add_argument("--output-dir", default="playlist", help="输出目录（默认：playlist）")
     parser.add_argument("--input-json", default="iptv.json", help="IPTV JSON 数据文件路径（默认：iptv.json）")

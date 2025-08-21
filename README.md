@@ -25,7 +25,7 @@ python main.py [OPTIONS]
 | ------------------- | -------------------------------------- |
 | --fetch             | 抓取 IPTV 原始数据                     |
 | --process           | 生成 iptv.json                         |
-| `–m3u [uni          | mul                                    |
+| --m3u {uni,mul,all} | 生成m3u播放列表                        |
 | --sort-file <路径>  | 排序文件路径，默认 sort.txt            |
 | --output-dir <路径> | 输出目录，默认 playlist                |
 | --input-json <路径> | IPTV JSON 数据文件路径，默认 iptv.json |
