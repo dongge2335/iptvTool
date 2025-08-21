@@ -1,7 +1,7 @@
 import requests, re, json, random
 
-from encrypt import *
-from config import *
+from .encrypt import *
+from .config import *
 
 
 def getEncryptToken():

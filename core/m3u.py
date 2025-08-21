@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from config import *
+from .config import *
 
 
 def gen_m3u_playlist(

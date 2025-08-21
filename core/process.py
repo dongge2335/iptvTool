@@ -2,7 +2,7 @@ import json
 import re
 import subprocess
 
-from config import *
+from .config import *
 
 def get_redirected_rtsp(rtsp_url):
     command = ["ffprobe", "-print_format", "json", "-i", rtsp_url]
