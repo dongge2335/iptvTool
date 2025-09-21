@@ -22,6 +22,7 @@ group_keywords = {
     "山东": "山东频道",
     "卫视": "卫视频道",
     "齐鲁": "山东频道",
+    "海洋频道": "山东频道",
     "居家购物": "山东频道",
 }
 
@@ -29,12 +30,12 @@ ChannelName_map_by_id = {
     "8": "CCTV5+高清",
 }
 
+
 # m3u.py
 
 udpxy_base_url = "http://192.168.0.1:4022"
-
 logo_base = "https://raw.githubusercontent.com/plsy1/iptv/refs/heads/main/logo/"
-url_tvg = "https://github.com/plsy1/epg/raw/refs/heads/main/e/seven-days.gz,https://e.erw.cc/all.xml.gz"
+url_tvg = "https://github.com/plsy1/epg/raw/refs/heads/main/e/seven-days.xml.gz,https://e.erw.cc/all.xml.gz"
 
 name_map_by_name = {
     "CCTV少儿": "CCTV14",

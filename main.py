@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse
-from core.STB import get_iptw_raw
+from core.STB import get_iptv_raw
 from core.process import (
     gen_iptv_json,
     extract_channel_names,
@@ -16,6 +16,11 @@ def main():
     parser.add_argument("--fetch", action="store_true", help="抓取 IPTV 原始数据")
     parser.add_argument("--process", action="store_true", help="生成 iptv.json")
     parser.add_argument("--m3u", choices=["uni", "mul", "all"], help="生成m3u播放列表")
+    parser.add_argument("--list", action="store_true", help="生成频道名称列表")
+    parser.add_argument("--unused", action="store_true", help="生成未使用组播地址列表")
+    parser.add_argument(
+        "--all", action="store_true", help="执行 fetch + process + m3u all 全流程"
+    )
     parser.add_argument(
         "--sort-file", default="sort.txt", help="排序文件路径（默认：sort.txt）"
     )
@@ -27,13 +32,6 @@ def main():
         default="iptv.json",
         help="IPTV JSON 数据文件路径（默认：iptv.json）",
     )
-    parser.add_argument("--list", action="store_true", help="生成频道列表channels.txt")
-    parser.add_argument(
-        "--unused", action="store_true", help="生成频道列表channels.txt"
-    )
-    parser.add_argument(
-        "--all", action="store_true", help="执行 fetch + process + m3u all 全流程"
-    )
 
     args = parser.parse_args()
 
@@ -44,9 +42,8 @@ def main():
 
     if args.fetch:
         print("📡 获取 IPTV 原始数据...")
-        get_iptw_raw()
+        get_iptv_raw()
         process_raw()
-
     if args.process:
         print("🛠 生成 iptv.json...")
         gen_iptv_json()

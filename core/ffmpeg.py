@@ -4,7 +4,7 @@ import time
 import subprocess
 
 
-def get_redirected_rtsp_with_retry(url, retries=3, delay=1):
+def get_redirected_rtsp_with_retry(url, retries=5, delay=1):
     """
     尝试获取 RTSP 重定向地址，失败时重试
     :param url: 原始 RTSP 地址
@@ -22,6 +22,7 @@ def get_redirected_rtsp_with_retry(url, retries=3, delay=1):
                 time.sleep(delay)
     return None
 
+
 def get_redirected_rtsp(rtsp_url):
     command = ["ffprobe", "-print_format", "json", "-i", rtsp_url]
 
@@ -35,10 +36,10 @@ def get_redirected_rtsp(rtsp_url):
         if redirect_match:
             return redirect_match.group(1)
     except Exception as e:
-        print(f"Error occurred while running ffprobe: {e}")
         return None
 
     return None
+
 
 def get_rtsp_resolution_level(rtsp_url):
     command = [
@@ -79,7 +80,6 @@ def get_rtsp_resolution_level(rtsp_url):
             return {"width": width, "height": height, "level": level}
 
     except Exception as e:
-        print(f"Error occurred while running ffprobe: {e}")
         return None
 
     return None

@@ -61,13 +61,14 @@ def gen_m3u_playlist(
             if mode == "uni":
                 url = ch.get("uni_live", "")
             else:
-                url = ch.get("udpxy_url", "").replace("rtp://",'rtp/')
-                url = f'{udpxy_base_url}/{url}'
-
+                url = ch.get("udpxy_url", "").replace("rtp://", "rtp/")
+                url = f"{udpxy_base_url}/{url}"
             if not url:
                 continue
 
-            tvg_logo = f"{logo_base}{name_map_by_name.get(channel_name, channel_name)}.png"
+            tvg_logo = (
+                f"{logo_base}{name_map_by_name.get(channel_name, channel_name)}.png"
+            )
 
             extinf = (
                 f"#EXTINF:-1 "

@@ -1,140 +1,115 @@
-import requests, re, json, random
-
-from .encrypt import *
-from .config import *
-
-
-def getEncryptToken():
-    url = f"http://{eas_ip}:{eas_port}/iptvepg/platform/getencrypttoken.jsp"
-
-    queries = {
-        "UserID": userID,
-        "Action": "Login",
-        "TerminalFlag": "1",
-        "TerminalOsType": "0",
-        "STBID": "",
-        "stbtype": "",
-    }
-
-    query_string = "&".join([f"{key}={value}" for key, value in queries.items()])
-
-    full_url = f"{url}?{query_string}"
-
-    response = requests.get(full_url)
-
-    if response.status_code == 200:
-        match = re.search(r"GetAuthInfo\('(.*?)'\)", response.text)
-        if match:
-            encryptToken = match.group(1)
-            return encryptToken
-        else:
-            print("getEncryptToken: 未找到 GetAuthInfo 函数中的值, 请检查网络连接")
-            exit
-    else:
-        print(f"getEncryptToken: 请求失败，状态码：{response.status_code}")
+import requests
+import re
+import json
+import random
+from .encrypt import UnionDesEncrypt
+from .config import (
+    eas_ip, eas_port, epgIP, epgPort,
+    userID, stbID, ip, MAC, CustomStr, encryptKey
+)
 
 
-def generateAuthenticator(encryptToken):
-    try:
-        random_number = random.randint(10000000, 99999999)
-        strEncry = str(random_number) + "$" + encryptToken
-        strEncry2 = (
-            strEncry
-            + "$"
-            + userID
-            + "$"
-            + stbID
-            + "$"
-            + ip
-            + "$"
-            + MAC
-            + "$"
-            + CustomStr
-        )
-        res = UnionDesEncrypt(strEncry2, encryptKey)
-        return res
+class IPTVClient:
+    def __init__(self):
+        self.session = requests.Session()
+        self.encrypt_token = None
+        self.jsessionid = None
+        self.user_token = None
 
-    except Exception as e:
-        print(f"generateAuthenticator: {e}")
+    def login(self):
+        url = f"http://{eas_ip}:{eas_port}/iptvepg/platform/getencrypttoken.jsp"
+        params = {
+            "UserID": userID,
+            "Action": "Login",
+            "TerminalFlag": "1",
+            "TerminalOsType": "0",
+            "STBID": "",
+            "stbtype": "",
+        }
+        r = self.session.get(url, params=params, timeout=5)
+        r.raise_for_status()
+        m = re.search(r"GetAuthInfo\('(.*?)'\)", r.text)
+        if not m:
+            raise RuntimeError("登录失败: encryptToken 未获取")
+        self.encrypt_token = m.group(1)
 
+    def auth(self):
+        rand = random.randint(10_000_000, 99_999_999)
+        src = f"{rand}${self.encrypt_token}"
+        src2 = f"{src}${userID}${stbID}${ip}${MAC}${CustomStr}"
+        authenticator = UnionDesEncrypt(src2, encryptKey)
+        url = f"http://{epgIP}:{epgPort}/iptvepg/platform/auth.jsp"
+        data = {
+            "easip": eas_ip,
+            "ipVersion": "4",
+            "networkid": "1",
+            "serterminalno": "311",
+            "UserID": userID,
+            "Authenticator": authenticator,
+            "StbIP": ip
+        }
+        r = self.session.post(url, data=data, timeout=5)
+        r.raise_for_status()
+        self.jsessionid = r.cookies.get("JSESSIONID")
 
-def Authentication(Authenticator):
-    user_token = ""
-    url = f"http://{epgIP}:{epgPort}/iptvepg/platform/auth.jsp?easip={eas_ip}&ipVersion=4&networkid=1&serterminalno=311"
+        m = re.search(r"window\.location\s*=\s*'(http[^']+)'", r.content.decode("gbk"))
+        if not m:
+            raise RuntimeError("鉴权失败: 跳转地址未找到")
 
-    data = {"UserID": userID, "Authenticator": Authenticator, "StbIP": ip}
+        redirect_url = m.group(1)
+        r2 = self.session.post(redirect_url,
+                               headers={"Cookie": f"JSESSIONID={self.jsessionid}"},
+                               timeout=5)
+        r2.raise_for_status()
+        m2 = re.search(r"UserToken=([A-Za-z0-9_\-\.]+)", redirect_url)
+        if not m2:
+            raise RuntimeError("鉴权失败: user_token 未获取")
+        self.user_token = m2.group(1)
 
-    response = requests.post(url, data=data)
+    def portal_auth(self):
+        url = f"http://{epgIP}:{epgPort}/iptvepg/function/funcportalauth.jsp"
+        headers = {"Cookie": f"JSESSIONID={self.jsessionid}"}
+        data = {
+            "UserToken": self.user_token,
+            "UserID": userID,
+            "STBID": stbID,
+            "stbinfo": "",
+            "prmid": "",
+            "easip": eas_ip,
+            "networkid": 1,
+            "stbtype": "",
+            "drmsupplier": "",
+            "stbversion": "",
+        }
+        r = self.session.post(url, headers=headers, data=data, timeout=5)
+        r.raise_for_status()
 
-    cookies = response.cookies
-    jsessionid = cookies.get("JSESSIONID")
-
-    url_pattern = r"window\.location\s*=\s*'(http[^']+)'"
-    match = re.search(url_pattern, response.content.decode("gbk"))
-
-    if match:
-        extracted_url = match.group(1)
-
-        response = requests.post(
-            extracted_url, headers={"Cookie": f"JSESSIONID={jsessionid}"}
-        )
-        if response.status_code == 200:
-            pattern = r"UserToken=([A-Za-z0-9_\-\.]+)"
-            match = re.search(pattern, extracted_url)
-
-            if match:
-                user_token = match.group(1)
-    else:
-        print("auth: 鉴权链接获取失败.")
-
-    return jsessionid, user_token
-
-
-def fetchRaw(jsessionid, user_token):
-
-    url = f"http://{epgIP}:{epgPort}/iptvepg/function/funcportalauth.jsp"
-
-    headers = {"Cookie": f"JSESSIONID={jsessionid}"}
-
-    data = {
-        "UserToken": user_token,
-        "UserID": userID,
-        "STBID": stbID,
-        "stbinfo": "",
-        "prmid": "",
-        "easip": eas_ip,
-        "networkid": 1,
-        "stbtype": "",
-        "drmsupplier": "",
-        "stbversion": "",
-    }
-
-    response = requests.post(url, headers=headers, data=data)
-    url = f"http://{epgIP}:{epgPort}/iptvepg/function/frameset_builder.jsp"
-    headers = {"Cookie": f"JSESSIONID={jsessionid}"}
-    data = {
-        "MAIN_WIN_SRC": "/iptvepg/frame205/channel_start.jsp?tempno=-1",
-        "NEED_UPDATE_STB": "1",
-        "BUILD_ACTION": "FRAMESET_BUILDER",
-        "hdmistatus": "undefined",
-    }
-
-    response = requests.post(url, headers=headers, data=data)
-    raw_text = response.content.decode("gbk")
-
-    channels = []
-    for line in raw_text.splitlines():
-        match = re.search(r"jsSetConfig\('Channel',\s*'([^']+)'\)", line)
-        if match:
-            config_str = match.group(1)
-            pattern = r"(\w+)=\"([^\"]+)\""
-            config_dict = dict(re.findall(pattern, config_str))
-            channels.append(config_dict)
-
-    with open("raw.json", "w", encoding="utf-8") as json_file:
-        json.dump(channels, json_file, ensure_ascii=False, indent=4)
-        print("数据已写入到 raw.json")
+    def get_channels(self):
+        url = f"http://{epgIP}:{epgPort}/iptvepg/function/frameset_builder.jsp"
+        headers = {"Cookie": f"JSESSIONID={self.jsessionid}"}
+        data = {
+            "MAIN_WIN_SRC": "/iptvepg/frame205/channel_start.jsp?tempno=-1",
+            "NEED_UPDATE_STB": "1",
+            "BUILD_ACTION": "FRAMESET_BUILDER",
+            "hdmistatus": "undefined",
+        }
+        r = self.session.post(url, headers=headers, data=data, timeout=5)
+        r.raise_for_status()
+        text = r.content.decode("gbk")
+        channels = []
+        for line in text.splitlines():
+            m = re.search(r"jsSetConfig\('Channel',\s*'([^']+)'\)", line)
+            if m:
+                cfg = dict(re.findall(r"(\w+)=\"([^\"]+)\"", m.group(1)))
+                channels.append(cfg)
+        return channels
 
 
-def get_iptw_raw():
-    fetchRaw(*Authentication(generateAuthenticator(getEncryptToken())))
+def get_iptv_raw():
+    client = IPTVClient()
+    client.login()
+    client.auth()
+    client.portal_auth()
+    channels = client.get_channels()
+    with open("raw.json", "w", encoding="utf-8") as f:
+        json.dump(channels, f, ensure_ascii=False, indent=4)
