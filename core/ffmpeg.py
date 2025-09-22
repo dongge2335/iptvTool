@@ -83,3 +83,35 @@ def get_rtsp_resolution_level(rtsp_url):
         return None
 
     return None
+
+
+def probe_info(url, timeout=5):
+    """
+    获取媒体信息，返回 dict 包含 programs、video/audio streams 等。
+    """
+    cmd = [
+        "ffprobe",
+        "-v", "quiet",
+        "-print_format", "json",
+        "-show_format",
+        "-show_streams",
+        "-show_programs",
+        url
+    ]
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              check=True, timeout=timeout)
+        info = json.loads(proc.stdout)
+        if "programs" in info and len(info["programs"]) > 0:
+            program_tags = info["programs"][0].get("tags", {})
+            info["service_name"] = program_tags.get("service_name")
+            info["service_provider"] = program_tags.get("service_provider")
+        else:
+            info["service_name"] = None
+            info["service_provider"] = None
+
+        return info
+    except subprocess.TimeoutExpired:
+        return {"error": "timeout"}
+    except Exception as e:
+        return {"error": str(e)}

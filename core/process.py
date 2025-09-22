@@ -35,7 +35,6 @@ def process_channel(channel):
         if match:
             tmp = match.group(0)
             redirected = get_redirected_rtsp_with_retry(tmp, retries=2, delay=1)
-
             if redirected is not None:
                 uni_live = redirected
                 pattern = r"(rtsp://\S+:\d+).*?(ch\d*)"
@@ -114,15 +113,20 @@ def extract_channel_names(json_file="raw.json", output_file="channels.txt"):
             print(f"{output_file} 不存在，将创建新的文件")
 
         if existing_channels == json_channel_names:
-            print("未发现频道变动")
+            print("频道列表未变动")
         else:
-            print("发现频道变动")
             added = [c for c in json_channel_names if c not in existing_channels]
             removed = [c for c in existing_channels if c not in json_channel_names]
             if added:
-                print(f"新增频道: {added}")
+                print("新增频道:", end=" ")
+                for i, c in enumerate(added):
+                    end = ", " if i < len(added) - 1 else "\n"
+                    print(c, end=end)
             if removed:
-                print(f"移除频道: {removed}")
+                print("移除频道:", end=" ")
+                for i, c in enumerate(removed):
+                    end = ", " if i < len(removed) - 1 else "\n"
+                    print(c, end=end)
 
         with open(output_file, "w", encoding="utf-8") as f:
             for name in json_channel_names:
@@ -132,9 +136,7 @@ def extract_channel_names(json_file="raw.json", output_file="channels.txt"):
         print(f"发生错误: {e}")
 
 
-def generate_unused_multicast_m3u(
-    json_file="raw.json", output_file="unused.m3u"
-):
+def generate_unused_multicast_m3u(json_file="raw.json", output_file="unused.m3u"):
     used = []
     noUse = []
     with open(json_file, "r", encoding="utf-8") as file:
@@ -148,7 +150,6 @@ def generate_unused_multicast_m3u(
         for i in range(0, 256):
             if i not in used:
                 noUse.append(i)
-    print(f"未使用的组播地址已保存到 {output_file}")
 
     with open(output_file, "w", encoding="utf-8") as f:
         f.write("#EXTM3U\n")
@@ -158,6 +159,8 @@ def generate_unused_multicast_m3u(
             f.write(
                 f"{extinf}\n{f'http://192.168.0.1:4022/rtp/239.253.240.{ch}:8000'}\n"
             )
+
+    print(f"未使用的组播地址已保存到 {output_file}")
 
 
 def process_raw(json_file="raw.json"):
@@ -175,3 +178,93 @@ def process_raw(json_file="raw.json"):
     with open(json_file, "w", encoding="utf-8") as file:
         json.dump(json_data, file, ensure_ascii=False, indent=2)
 
+
+
+def probe_unused_multicast(
+    json_file="raw.json",
+    timeout=10,
+    output_file="unused.json",
+    max_workers=1
+):
+    """
+    多线程调用 probe_info 获取未使用组播的 ffprobe JSON。
+    返回列表，每项为 {"addr": int, "info": dict}
+    """
+    with open(json_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    used = {
+        int(m.group(1))
+        for ch in data
+        if (m := re.search(r"\b(?:\d{1,3}\.){3}(\d{1,3})\b", ch.get("ChannelURL", "")))
+    }
+
+    unused = [i for i in range(1, 256) if i not in used]
+
+    def worker(ch):
+        url = f"{udpxy_base_url}/rtp/239.253.240.{ch}:8000"
+        print("Probing:", url)
+        info = probe_info(url, timeout=timeout)
+        return {"addr": ch, "info": info}
+
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for res in executor.map(worker, unused):
+            results.append(res)
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)
+
+    return results
+
+def probe_unicast(
+    json_file="raw.json",
+    timeout=10,
+    output_file="used.json",
+    max_workers=8
+):
+    """
+    多线程调用 probe_info 获取单播的 ffprobe JSON。
+    返回列表，每项为 {"name": str, "info": dict}
+    """
+    channels = []
+    with open(json_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    for channel in data:
+        if "ChannelSDP" in channel:
+            match = re.search(r"rtsp://\S+", channel["ChannelSDP"])
+            if match:
+                url = match.group(0)
+                channels.append({
+                    'name': channel['ChannelName'],
+                    'url': url
+                })
+
+    def worker(ch):
+        print("Probing:", ch['name'])
+        info = probe_info(ch['url'], timeout=timeout)
+        return {"name": ch['name'], "info": info}
+
+    results = []
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        for res in executor.map(worker, channels):
+            results.append(res)
+
+    with open(output_file, "w", encoding="utf-8") as f:
+        json.dump(results, f, ensure_ascii=False, indent=4)
+
+    return results
+
+
+def test_auth():
+    with open("raw.json", "r", encoding="utf-8") as file:
+        json_data = json.load(file)
+        for channel in json_data:
+            if channel.get("ChannelName") == '环球旅游标清':
+                match = re.search(r"rtsp://\S+", channel["ChannelSDP"])
+                if match:
+                    tmp = match.group(0)
+                    redirected = get_redirected_rtsp(tmp)
+                    if redirected.startswith('rtsp://222'):
+                        print("需要鉴权")

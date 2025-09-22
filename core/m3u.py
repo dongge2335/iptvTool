@@ -50,6 +50,9 @@ def gen_m3u_playlist(
         fp.write(f'#EXTM3U url-tvg="{url_tvg}" \n')
 
         for ch in channels:
+            catchup = ch.get("uni_playback")
+            if catchup.startswith('rtsp://222') and mode == 'uni':
+                continue
             channel_name = ch.get("channel_name", "")
             tvg_id = ch.get("tvg_id", "")
             tvg_name = ch.get("tvg_name", "")
@@ -72,12 +75,13 @@ def gen_m3u_playlist(
 
             extinf = (
                 f"#EXTINF:-1 "
-                f'tvg-name="{tvg_name}" '
+                f'tvg-name="{channel_name}" '
+                # f'tvg-id="{tvg_id}" '
                 f'group-title="{group_title}" '
                 f'tvg-logo="{tvg_logo}" '
             )
 
-            catchup = ch.get("uni_playback")
+            
             if catchup:
                 extinf += f'catchup="default" catchup-source="{catchup}"'
 

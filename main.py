@@ -6,6 +6,7 @@ from core.process import (
     extract_channel_names,
     generate_unused_multicast_m3u,
     process_raw,
+    test_auth,
 )
 from core.m3u import gen_m3u_playlist
 
@@ -31,6 +32,10 @@ def main():
         "--input-json",
         default="iptv.json",
         help="IPTV JSON 数据文件路径（默认：iptv.json）",
+    )
+
+    parser.add_argument(
+        "--test", action="store_true", help="测试是否存在需要鉴权的单播地址"
     )
 
     args = parser.parse_args()
@@ -72,7 +77,12 @@ def main():
     if args.unused:
         generate_unused_multicast_m3u()
 
-    if not (args.fetch or args.process or args.m3u or args.list or args.unused):
+    if args.test:
+        test_auth()
+
+    if not (
+        args.fetch or args.process or args.m3u or args.list or args.unused or args.test
+    ):
         parser.print_help()
 
 
