@@ -5,7 +5,7 @@ from .config import *
 from .STB import IPTVClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 
 def get_iptv_raw():
@@ -199,7 +199,9 @@ def diff_channel_lists(json_file="data/raw.json", output_file="data/channels.txt
         print(f"发生错误: {e}")
 
 
-def generate_unused_multicast_m3u(json_file="data/raw.json", output_file="data/unused.m3u"):
+def generate_unused_multicast_m3u(
+    json_file="data/raw.json", output_file="data/unused.m3u"
+):
     used = []
     noUse = []
     with open(json_file, "r", encoding="utf-8") as file:
@@ -227,7 +229,10 @@ def generate_unused_multicast_m3u(json_file="data/raw.json", output_file="data/u
 
 
 def probe_unused_multicast(
-    json_file="data/raw.json", timeout=10, output_file="data/probe-unused.json", max_workers=1
+    json_file="data/raw.json",
+    timeout=10,
+    output_file="data/probe-unused.json",
+    max_workers=1,
 ):
     """
     多线程调用 probe_info 获取未使用组播的 ffprobe JSON。
@@ -262,7 +267,10 @@ def probe_unused_multicast(
 
 
 def probe_unicast(
-    json_file="data/raw.json", timeout=10, output_file="data/probe-unicast.json", max_workers=8
+    json_file="data/raw.json",
+    timeout=10,
+    output_file="data/probe-unicast.json",
+    max_workers=8,
 ):
     """
     多线程调用 probe_info 获取单播的 ffprobe JSON。
@@ -312,8 +320,15 @@ def json_to_md_table(json_file="data/iptv.json", md_file="data/channels.md"):
     with open(json_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
+    total_channels = len(data)
+
+    tz_utc8 = timezone(timedelta(hours=8))
+    now_str = datetime.now(tz=tz_utc8).strftime("%Y-%m-%d %H:%M:%S")
+
     lines = [
         "## 📺 频道列表\n",
+        f"**更新时间**: {now_str} UTC+8\n\n"
+        f"**频道总数**: {total_channels}\n\n"
         "| 频道名称 | 频道号 | 组播号 |",
         "|----------|--------|--------|",
     ]
