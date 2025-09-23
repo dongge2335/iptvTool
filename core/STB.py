@@ -1,12 +1,38 @@
-import requests
-import re
-import json
-import random
-from .encrypt import UnionDesEncrypt
+import re, random, requests, binascii
+from Crypto.Cipher import DES
+from Crypto.Util.Padding import pad
 from .config import (
-    eas_ip, eas_port, epgIP, epgPort,
-    userID, stbID, ip, MAC, CustomStr, encryptKey
+    eas_ip,
+    eas_port,
+    epgIP,
+    epgPort,
+    userID,
+    stbID,
+    ip,
+    MAC,
+    CustomStr,
+    encryptKey,
 )
+
+
+def UnionDesEncrypt(strMsg, strKey):
+    try:
+        keyappend = 8 - len(strKey)
+        if keyappend > 0:
+            strKey = strKey + "0" * keyappend
+
+        key_bytes = strKey.encode("utf-8")
+        msg_bytes = strMsg.encode("utf-8")
+
+        padded_msg = pad(msg_bytes, DES.block_size)
+
+        cipher = DES.new(key_bytes, DES.MODE_ECB)
+        encrypted = cipher.encrypt(padded_msg)
+
+        return binascii.hexlify(encrypted).decode("utf-8").upper()
+
+    except Exception as e:
+        print(f"UnionDesEncrypt: {e}")
 
 
 class IPTVClient:
@@ -46,7 +72,7 @@ class IPTVClient:
             "serterminalno": "311",
             "UserID": userID,
             "Authenticator": authenticator,
-            "StbIP": ip
+            "StbIP": ip,
         }
         r = self.session.post(url, data=data, timeout=5)
         r.raise_for_status()
@@ -57,9 +83,9 @@ class IPTVClient:
             raise RuntimeError("鉴权失败: 跳转地址未找到")
 
         redirect_url = m.group(1)
-        r2 = self.session.post(redirect_url,
-                               headers={"Cookie": f"JSESSIONID={self.jsessionid}"},
-                               timeout=5)
+        r2 = self.session.post(
+            redirect_url, headers={"Cookie": f"JSESSIONID={self.jsessionid}"}, timeout=5
+        )
         r2.raise_for_status()
         m2 = re.search(r"UserToken=([A-Za-z0-9_\-\.]+)", redirect_url)
         if not m2:
@@ -103,13 +129,3 @@ class IPTVClient:
                 cfg = dict(re.findall(r"(\w+)=\"([^\"]+)\"", m.group(1)))
                 channels.append(cfg)
         return channels
-
-
-def get_iptv_raw():
-    client = IPTVClient()
-    client.login()
-    client.auth()
-    client.portal_auth()
-    channels = client.get_channels()
-    with open("raw.json", "w", encoding="utf-8") as f:
-        json.dump(channels, f, ensure_ascii=False, indent=4)

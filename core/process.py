@@ -1,68 +1,26 @@
-import json
-import re
-from .ffmpeg import *
+import json, re
+from pathlib import Path
+from .helper import *
 from .config import *
+from .STB import IPTVClient
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
+from datetime import datetime
 
 
-def process_channel(channel):
-    if "ChannelURL" not in channel or not channel["ChannelURL"].startswith("igmp://"):
-        return None, f"频道 {channel.get('ChannelName', '?')} 没有 ChannelURL, 跳过"
-
-    udpxy_url = channel["ChannelURL"].replace("igmp://", "rtp://")
-    tvg_id = channel["UserChannelID"]
-    tvg_name = channel["ChannelName"]
-    channel_name = (
-        tvg_name.replace("超高清", "")
-        .replace("高清", "")
-        .replace("标清", "")
-        .replace(" ", "")
-    )
-
-    group_title = "其他频道"
-    for keyword, group in group_keywords.items():
-        if keyword in tvg_name:
-            group_title = group
-            break
-
-    uni_live = ""
-    uni_playback = ""
-    warnings = None
-
-    if "ChannelSDP" in channel:
-        print(f"Processing: {tvg_name}")
-        match = re.search(r"rtsp://\S+", channel["ChannelSDP"])
-        if match:
-            tmp = match.group(0)
-            redirected = get_redirected_rtsp_with_retry(tmp, retries=2, delay=1)
-            if redirected is not None:
-                uni_live = redirected
-                pattern = r"(rtsp://\S+:\d+).*?(ch\d*)"
-                match2 = re.search(pattern, uni_live)
-                if match2:
-                    url = match2.group(1)
-                    cid = match2.group(2)
-                    uni_playback = (
-                        f"{url}/iptv/Tvod/iptv/001/001/{cid}.rsc?tvdr={timeshift}"
-                    )
-            else:
-                warnings = f"未找到单播地址: {tvg_name}"
-
-    record = {
-        "tvg_id": tvg_id,
-        "tvg_name": tvg_name,
-        "group_title": group_title,
-        "channel_name": channel_name,
-        "udpxy_url": udpxy_url,
-        "uni_live": uni_live,
-        "uni_playback": uni_playback,
-    }
-
-    return record, warnings
+def get_iptv_raw():
+    print("获取 IPTV 原始数据...")
+    client = IPTVClient()
+    client.login()
+    client.auth()
+    client.portal_auth()
+    channels = client.get_channels()
+    with open("data/raw.json", "w", encoding="utf-8") as f:
+        json.dump(channels, f, ensure_ascii=False, indent=4)
 
 
 def gen_iptv_json():
-    with open("raw.json", "r", encoding="utf-8") as file:
+    with open("data/raw.json", "r", encoding="utf-8") as file:
         json_data = json.load(file)
 
     results = []
@@ -70,7 +28,9 @@ def gen_iptv_json():
 
     with ThreadPoolExecutor(max_workers=10) as executor:
         futures = {executor.submit(process_channel, ch): ch for ch in json_data}
-        for future in as_completed(futures):
+        for future in tqdm(
+            as_completed(futures), total=len(futures), desc="格式化 IPTV 原始数据..."
+        ):
             record, warning = future.result()
             if record:
                 results.append(record)
@@ -82,7 +42,7 @@ def gen_iptv_json():
     except ValueError:
         results.sort(key=lambda x: x["tvg_id"])
 
-    with open("iptv.json", "w", encoding="utf-8") as f:
+    with open("data/iptv.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
     if not_found:
@@ -91,7 +51,100 @@ def gen_iptv_json():
             print(msg)
 
 
-def extract_channel_names(json_file="raw.json", output_file="channels.txt"):
+def gen_m3u_playlist(
+    output_path="playlist",
+    json_file="data/iptv.json",
+    mode: str = "uni",
+    sort_file: str | None = None,
+) -> None:
+    """
+    生成 M3U 播放列表，可按 sort_file 指定顺序写入
+    :param json_file: JSON 数据文件
+    :param output_file: 输出的 .m3u 路径
+    :param mode: 'uni' 单播；'mul' 组播
+    :param sort_file: 包含 ChannelName 的排序文件，一行一个；若为 None 则保持原顺序
+    """
+    from pathlib import Path
+
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+
+    with Path(json_file).open("r", encoding="utf-8") as fp:
+        channels: list[dict] = json.load(fp)
+
+    if sort_file:
+        with Path(sort_file).open("r", encoding="utf-8") as fp:
+            order_list = [
+                line.strip()
+                for line in fp
+                if line.strip() and not line.strip().startswith("#")
+            ]
+
+        bucket: dict[str, list[dict]] = {}
+        for ch in channels:
+            bucket.setdefault(ch.get("ChannelName", ""), []).append(ch)
+
+        ordered_channels: list[dict] = []
+        remaining_channels: list[dict] = []
+
+        for tid in order_list:
+            ordered_channels.extend(bucket.pop(tid, []))
+
+        for remaining in bucket.values():
+            remaining_channels.extend(remaining)
+
+        high_channels = [
+            ch for ch in remaining_channels if "高清" in ch.get("ChannelName", "")
+        ]
+        low_channels = [
+            ch for ch in remaining_channels if "高清" not in ch.get("ChannelName", "")
+        ]
+
+        channels = ordered_channels + high_channels + low_channels
+
+    if mode == "uni":
+        output_file = f"{output_path}/unicast.m3u"
+    elif mode == "mul":
+        output_file = f"{output_path}/multicast.m3u"
+
+    with Path(output_file).open("w", encoding="utf-8") as fp:
+        fp.write(f'#EXTM3U url-tvg="{url_tvg}" \n')
+
+        for ch in channels:
+            catchup = ch.get("uni_playback")
+            if catchup.startswith("rtsp://222") and mode == "uni":
+                continue
+
+            tvg_name = ch.get("tvg_name", "")
+
+            tvg_logo = f"{logo_base}{tvg_name}.png"
+            group_title = ch.get("group_title", "")
+
+            if mode == "uni":
+                url = ch.get("uni_live", "")
+            elif mode == "mul":
+                url = ch.get("udpxy_url", "").replace("rtp://", "rtp/")
+                url = f"{udpxy_base_url}/{url}"
+            if not url:
+                continue
+
+            extinf = (
+                f"#EXTINF:-1 "
+                f'tvg-name="{tvg_name}" '
+                # f'tvg-id="{tvg_id}" '
+                f'group-title="{group_title}" '
+                f'tvg-logo="{tvg_logo}" '
+            )
+
+            if catchup:
+                extinf += f'catchup="default" catchup-source="{catchup}"'
+
+            extinf += f", {tvg_name}"
+            fp.write(f"{extinf}\n{url}\n")
+
+    print(f"播放列表已保存到 {output_file}")
+
+
+def diff_channel_lists(json_file="data/raw.json", output_file="data/channels.txt"):
     """
     从 JSON 文件读取 ChannelName 并写入文本文件，同时与已有 channel.txt 对比是否一致
     :param json_file: 输入的 JSON 文件路径
@@ -112,21 +165,31 @@ def extract_channel_names(json_file="raw.json", output_file="channels.txt"):
             existing_channels = []
             print(f"{output_file} 不存在，将创建新的文件")
 
+        final_message = ""
+        ifWrite = False
+
         if existing_channels == json_channel_names:
-            print("频道列表未变动")
+            final_message = "频道列表未变动"
         else:
+            ifWrite = True
             added = [c for c in json_channel_names if c not in existing_channels]
             removed = [c for c in existing_channels if c not in json_channel_names]
+
+            parts = []
             if added:
-                print("新增频道:", end=" ")
-                for i, c in enumerate(added):
-                    end = ", " if i < len(added) - 1 else "\n"
-                    print(c, end=end)
+                parts.append("上线频道: " + ", ".join(added))
             if removed:
-                print("移除频道:", end=" ")
-                for i, c in enumerate(removed):
-                    end = ", " if i < len(removed) - 1 else "\n"
-                    print(c, end=end)
+                parts.append("下线频道: " + ", ".join(removed))
+
+            final_message = "\n".join(parts)
+
+        print(final_message)
+
+        if ifWrite == True:
+            now_str = datetime.now().strftime("%Y-%m-%d")
+            with open("data/channel-change.md", "a", encoding="utf-8") as f:
+                f.write(f"#### 时间: {now_str}\n")
+                f.write(final_message + "\n\n")
 
         with open(output_file, "w", encoding="utf-8") as f:
             for name in json_channel_names:
@@ -136,7 +199,7 @@ def extract_channel_names(json_file="raw.json", output_file="channels.txt"):
         print(f"发生错误: {e}")
 
 
-def generate_unused_multicast_m3u(json_file="raw.json", output_file="unused.m3u"):
+def generate_unused_multicast_m3u(json_file="data/raw.json", output_file="data/unused.m3u"):
     used = []
     noUse = []
     with open(json_file, "r", encoding="utf-8") as file:
@@ -163,28 +226,8 @@ def generate_unused_multicast_m3u(json_file="raw.json", output_file="unused.m3u"
     print(f"未使用的组播地址已保存到 {output_file}")
 
 
-def process_raw(json_file="raw.json"):
-    """
-    根据 UserChannelID 更新 ChannelName
-    """
-    with open(json_file, "r", encoding="utf-8") as file:
-        json_data = json.load(file)
-
-    for channel in json_data:
-        user_id = channel.get("UserChannelID")
-        if user_id in ChannelName_map_by_id:
-            channel["ChannelName"] = ChannelName_map_by_id[user_id]
-
-    with open(json_file, "w", encoding="utf-8") as file:
-        json.dump(json_data, file, ensure_ascii=False, indent=2)
-
-
-
 def probe_unused_multicast(
-    json_file="raw.json",
-    timeout=10,
-    output_file="unused.json",
-    max_workers=1
+    json_file="data/raw.json", timeout=10, output_file="data/probe-unused.json", max_workers=1
 ):
     """
     多线程调用 probe_info 获取未使用组播的 ffprobe JSON。
@@ -204,7 +247,7 @@ def probe_unused_multicast(
     def worker(ch):
         url = f"{udpxy_base_url}/rtp/239.253.240.{ch}:8000"
         print("Probing:", url)
-        info = probe_info(url, timeout=timeout)
+        info = probe_info_by_url(url, timeout=timeout)
         return {"addr": ch, "info": info}
 
     results = []
@@ -217,11 +260,9 @@ def probe_unused_multicast(
 
     return results
 
+
 def probe_unicast(
-    json_file="raw.json",
-    timeout=10,
-    output_file="used.json",
-    max_workers=8
+    json_file="data/raw.json", timeout=10, output_file="data/probe-unicast.json", max_workers=8
 ):
     """
     多线程调用 probe_info 获取单播的 ffprobe JSON。
@@ -236,15 +277,12 @@ def probe_unicast(
             match = re.search(r"rtsp://\S+", channel["ChannelSDP"])
             if match:
                 url = match.group(0)
-                channels.append({
-                    'name': channel['ChannelName'],
-                    'url': url
-                })
+                channels.append({"name": channel["ChannelName"], "url": url})
 
     def worker(ch):
-        print("Probing:", ch['name'])
-        info = probe_info(ch['url'], timeout=timeout)
-        return {"name": ch['name'], "info": info}
+        print("Probing:", ch["name"])
+        info = probe_info_by_url(ch["url"], timeout=timeout)
+        return {"name": ch["name"], "info": info}
 
     results = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -254,17 +292,46 @@ def probe_unicast(
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=4)
 
-    return results
-
 
 def test_auth():
-    with open("raw.json", "r", encoding="utf-8") as file:
+    with open("data/raw.json", "r", encoding="utf-8") as file:
         json_data = json.load(file)
         for channel in json_data:
-            if channel.get("ChannelName") == '环球旅游标清':
+            if channel.get("ChannelName") == "环球旅游标清":
                 match = re.search(r"rtsp://\S+", channel["ChannelSDP"])
                 if match:
                     tmp = match.group(0)
-                    redirected = get_redirected_rtsp(tmp)
-                    if redirected.startswith('rtsp://222'):
+                    redirected = get_redirected_rtsp_url(tmp)
+                    if redirected.startswith("rtsp://222"):
                         print("需要鉴权")
+                    else:
+                        print("无需鉴权")
+
+
+def json_to_md_table(json_file="data/iptv.json", md_file="data/channels.md"):
+    with open(json_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    lines = [
+        "## 📺 频道列表\n",
+        "| 频道名称 | 频道号 | 组播号 |",
+        "|----------|--------|--------|",
+    ]
+
+    for ch in data:
+        name = ch.get("ChannelName", "")
+        tvg_id = ch.get("tvg_id", "")
+
+        channel_url = ch.get("udpxy_url", "")
+        mcast_number = ""
+        if channel_url.startswith("rtp://"):
+            match = re.search(r"\.(\d+):\d+$", channel_url)
+            if match:
+                mcast_number = match.group(1)
+
+        lines.append(f"| {name} | {tvg_id} | {mcast_number} |")
+
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    print("频道列表 Markdown 文件 已生成")
