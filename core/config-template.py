@@ -2,10 +2,8 @@
 
 eas_ip = ""
 eas_port = ""
-
 epgIP = ""
 epgPort = ""
-
 userID = ""
 stbID = ""
 ip = ""
@@ -20,24 +18,13 @@ timeshift = "{utc:YmdHMS}GMT-{utcend:YmdHMS}GMT"
 group_keywords = {
     "CCTV": "央视频道",
     "山东": "山东频道",
-    "卫视": "卫视频道",
-    "齐鲁": "山东频道",
-    "海洋频道": "山东频道",
-    "居家购物": "山东频道",
 }
 
-ChannelName_map_by_id = {
-    "8": "CCTV5+高清",
+tvg_name_map_by_tvg_id = {
+    "8": "CCTV5+",
 }
 
-
-# m3u.py
-
-udpxy_base_url = "http://192.168.0.1:4022"
-logo_base = "https://raw.githubusercontent.com/plsy1/iptv/refs/heads/main/logo/"
-url_tvg = "https://github.com/plsy1/epg/raw/refs/heads/main/e/seven-days.xml.gz,https://e.erw.cc/all.xml.gz"
-
-name_map_by_name = {
+tvg_name_map_by_tvg_name = {
     "CCTV少儿": "CCTV14",
     "CCTV4中文国际欧洲": "CCTV4欧洲",
     "CCTV4中文国际美洲": "CCTV4美洲",
@@ -50,10 +37,14 @@ name_map_by_name = {
     "山东广播电视台经济广播": "山东经济广播",
     "海洋频道": "山东海洋频道",
     "KAKU少儿": "卡酷少儿",
+    "汽摩频道": "汽摩",
+    "齐鲁":"山东齐鲁",
+    "居家购物":"山东居家购物"
 }
 
-name_map_by_id = {
-    "8": "CCTV5+",
-    "20": "山东齐鲁",
-    "29": "山东居家购物",
-}
+
+# m3u.py
+
+udpxy_base_url = "http://192.168.0.1:4022"
+logo_base = "https://raw.githubusercontent.com/plsy1/iptv/main/logo/"
+url_tvg = "https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz,https://e.erw.cc/all.xml.gz"
