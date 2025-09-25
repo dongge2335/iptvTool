@@ -48,25 +48,19 @@ python main.py --process
 **生成单播播放列表**
 
 ```
-python main.py --m3u uni
+python main.py --m3u --mode uni
 ```
 
 **生成组播播放列表**
 
 ```
-python main.py --m3u mul
+python main.py --m3u --mode mul
 ```
 
 **全流程执行（抓取 + 生成 JSON + 生成全部播放列表）**
 
 ```
 python main.py --all
-```
-
-**使用自定义排序文件和输出目录**
-
-```
-python main.py --all --sort-file mysort.txt --output-dir myplaylist
 ```
 
 ## **输出文件**

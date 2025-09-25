@@ -45,6 +45,17 @@ def gen_iptv_json():
     with open("data/iptv.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
 
+    filtered_results = [
+        ch
+        for ch in results
+        if not any(
+            ch.get("ChannelName", "").startswith(local) for local in exclude_channel_list
+        )
+    ]
+
+    with open("data/iptv-no-local.json", "w", encoding="utf-8") as f:
+        json.dump(filtered_results, f, ensure_ascii=False, indent=2)
+
     if not_found:
         print("=== 未找到单播地址的频道 ===")
         for msg in not_found:
@@ -56,6 +67,7 @@ def gen_m3u_playlist(
     json_file="data/iptv.json",
     mode: str = "uni",
     sort_file: str | None = None,
+    generate_local_channel: bool = False,
 ) -> None:
     """
     生成 M3U 播放列表，可按 sort_file 指定顺序写入
@@ -115,6 +127,11 @@ def gen_m3u_playlist(
                 continue
 
             tvg_name = ch.get("tvg_name", "")
+
+            if not generate_local_channel and any(
+                tvg_name.startswith(local) for local in exclude_channel_list
+            ):
+                continue
 
             tvg_logo = f"{logo_base}{tvg_name}.png"
             group_title = ch.get("group_title", "")
@@ -230,7 +247,7 @@ def generate_unused_multicast_m3u(
 
 def probe_unused_multicast(
     json_file="data/raw.json",
-    timeout=10,
+    timeout=30,
     output_file="data/probe-unused.json",
     max_workers=1,
 ):
@@ -305,7 +322,7 @@ def test_auth():
     with open("data/raw.json", "r", encoding="utf-8") as file:
         json_data = json.load(file)
         for channel in json_data:
-            if channel.get("ChannelName") == "环球旅游标清":
+            if channel.get("ChannelName") == "茶高清":
                 match = re.search(r"rtsp://\S+", channel["ChannelSDP"])
                 if match:
                     tmp = match.group(0)
@@ -320,7 +337,16 @@ def json_to_md_table(json_file="data/iptv.json", md_file="data/channels.md"):
     with open(json_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    total_channels = len(data)
+    excluded_count = sum(
+        1
+        for channel_info in data
+        if any(
+            channel_info.get("tvg_name", "").startswith(local)
+            for local in exclude_channel_list
+        )
+    )
+
+    total_channels = len(data) - excluded_count
 
     tz_utc8 = timezone(timedelta(hours=8))
     now_str = datetime.now(tz=tz_utc8).strftime("%Y-%m-%d %H:%M:%S")
@@ -337,6 +363,11 @@ def json_to_md_table(json_file="data/iptv.json", md_file="data/channels.md"):
         name = ch.get("ChannelName", "")
         tvg_id = ch.get("tvg_id", "")
 
+        tvg_name = ch.get("tvg_name", "")
+
+        if any(tvg_name.startswith(local) for local in exclude_channel_list):
+            continue
+
         channel_url = ch.get("udpxy_url", "")
         mcast_number = ""
         if channel_url.startswith("rtp://"):
@@ -350,3 +381,69 @@ def json_to_md_table(json_file="data/iptv.json", md_file="data/channels.md"):
         f.write("\n".join(lines))
 
     print("频道列表 Markdown 文件 已生成")
+
+
+def process_playback(json_file="data/iptv.json"):
+    with open(json_file, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    for channel in data:
+        uni_playback = channel.get("uni_playback")
+        channel_name = channel.get("ChannelName")
+
+        if not uni_playback or not channel_name:
+            continue
+
+        if not any(
+            ch in channel_name for ch in channel_should_process_playback_address
+        ):
+            continue
+
+        # if any(
+        #     channel_name.startswith(ch)
+        #     for ch in channel_should_not_process_playback_address
+        # ):
+        #     continue
+
+        begin_time = get_yyyyMMddHHmmss_time(-5)
+        end_time = get_yyyyMMddHHmmss_time(days=-5, minutes=-30)
+
+        uni_playback_filled = uni_playback.replace("{utc:YmdHMS}", begin_time).replace(
+            "{utcend:YmdHMS}", end_time
+        )
+
+        if test_ffmpeg_rtsp(uni_playback_filled):
+            print(f"{channel_name}: 原地址可用，跳过.")
+            continue
+
+        success = test_ip_connectivity(
+            uni_playback_filled, 36, 48
+        ) or test_ip_connectivity(uni_playback_filled, 68, 74)
+
+        if success:
+            parsed = urlparse(uni_playback)
+            ip_parts = parsed.hostname.split(".")
+            ip_parts[-1] = str(success)
+            new_ip = ".".join(ip_parts)
+            new_url = uni_playback.replace(parsed.hostname, new_ip)
+            channel["uni_playback"] = new_url
+            print(f"{channel_name}: 找到可用七天回看地址.")
+
+        else:
+            print(f"{channel_name}: 无可用七天回看地址.")
+
+    with open(json_file, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=4)
+
+    filtered_results = [
+        ch
+        for ch in data
+        if not any(
+            ch.get("ChannelName", "").startswith(local) for local in exclude_channel_list
+        )
+    ]
+
+    with open("data/iptv-no-local.json", "w", encoding="utf-8") as f:
+        json.dump(filtered_results, f, ensure_ascii=False, indent=2)
+
+    print("回看地址处理完成.")

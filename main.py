@@ -12,12 +12,15 @@ def main():
     parser.add_argument(
         "--process", action="store_true", help="处理 raw.json 并生成 iptv.json"
     )
+    parser.add_argument(
+        "--playback", action="store_true", help="处理 iptv.json 搜索七天回看地址并替换"
+    )
     parser.add_argument("--m3u", action="store_true", help="生成 M3U 播放列表")
     parser.add_argument(
         "--diff", action="store_true", help="生成频道名称列表并与现有文件对比"
     )
     parser.add_argument(
-        "--unused", action="store_true", help="生成未使用的组播地址列表"
+        "--unused", action="store_true", help="生成未使用的组播地址 M3U 播放列表"
     )
     parser.add_argument(
         "--test", action="store_true", help="测试是否存在需要鉴权的单播地址"
@@ -30,9 +33,7 @@ def main():
     )
 
     parser.add_argument(
-        "--list",
-        action="store_true",
-        help="生成频道列表 Markdown 文件"
+        "--list", action="store_true", help="生成频道列表 Markdown 文件"
     )
 
     parser.add_argument("--mode", choices=["uni", "mul", "all"], default="all")
@@ -42,11 +43,14 @@ def main():
     )
     parser.add_argument("--max-workers", type=int, default=8, help="ffprobe 并发线程数")
 
+    parser.add_argument("--local", action="store_true", help="生成 M3U 是否包含本地频道")
+
     args = parser.parse_args()
 
     if args.all:
         args.fetch = True
         args.process = True
+        args.playback = True
         args.m3u = True
         args.diff = True
 
@@ -54,16 +58,16 @@ def main():
         get_iptv_raw()
     if args.process:
         gen_iptv_json()
+    if args.playback:
+        process_playback()
     if args.m3u:
         if args.mode in ["uni", "all"]:
             gen_m3u_playlist(
-                mode="uni",
-                sort_file=args.sort_file,
+                mode="uni", sort_file=args.sort_file, generate_local_channel=args.local
             )
         if args.mode in ["mul", "all"]:
             gen_m3u_playlist(
-                mode="mul",
-                sort_file=args.sort_file,
+                mode="mul", sort_file=args.sort_file, generate_local_channel=args.local
             )
         json_to_md_table()
 
@@ -82,6 +86,7 @@ def main():
 
     if args.list:
         json_to_md_table()
+
 
 if __name__ == "__main__":
     main()

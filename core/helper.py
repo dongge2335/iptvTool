@@ -1,5 +1,9 @@
 import json, re, time, subprocess
 from .config import *
+import subprocess
+from urllib.parse import urlparse
+from datetime import datetime, timedelta
+
 
 def get_redirected_rtsp_url(url, retries=5, delay=1, timeout=5):
     """
@@ -32,6 +36,7 @@ def get_redirected_rtsp_url(url, retries=5, delay=1, timeout=5):
             time.sleep(delay)
 
     return None
+
 
 def probe_info_by_url(url, timeout=5):
     """
@@ -67,6 +72,7 @@ def probe_info_by_url(url, timeout=5):
     except Exception as e:
         return {"error": str(e)}
 
+
 def process_channel(channel):
     if "ChannelURL" not in channel or not channel["ChannelURL"].startswith("igmp://"):
         return None, f"频道 {channel.get('ChannelName', '?')} 没有 ChannelURL, 跳过"
@@ -91,7 +97,7 @@ def process_channel(channel):
     for keyword, title in group_keywords.items():
         if keyword in ChannelName:
             group_title = title
-            break;
+            break
 
     udpxy_url = channel["ChannelURL"].replace("igmp://", "rtp://")
     uni_live = ""
@@ -128,3 +134,63 @@ def process_channel(channel):
     }
 
     return record, warnings
+
+
+def test_ffmpeg_rtsp(url, timeout=3):
+    """
+    用 FFmpeg 尝试拉 RTSP 流，返回 True 表示能拉通，False 表示失败
+    """
+    cmd = [
+        "ffmpeg",
+        "-rtsp_transport",
+        "udp",
+        "-i",
+        url,
+        "-t",
+        "1",
+        "-f",
+        "null",
+        "-",
+    ]
+    try:
+        subprocess.run(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout,
+            check=True,
+        )
+        return True
+    except Exception:
+        return False
+
+
+def get_yyyyMMddHHmmss_time(days=0, hours=0, minutes=0):
+    """
+    返回偏移后的时间，格式: yyyyMMddHHmmss
+    days: 偏移天数，可正可负
+    hours: 偏移小时
+    minutes: 偏移分钟
+    """
+    target_time = datetime.now() + timedelta(days=days, hours=hours, minutes=minutes)
+    return target_time.strftime("%Y%m%d%H%M%S")
+
+
+def test_ip_connectivity(url, start=1, end=254):
+    """
+    测试 RTSP URL 中 IP 最后一段从 start 到 end 哪个可连通。
+    只修改 IP，tvdr 保持原样。
+    返回第一个可连通的 URL 或 None
+    """
+    parsed = urlparse(url)
+    ip_parts = parsed.hostname.split(".")
+
+    for last_octet in range(start, end + 1):
+        ip_parts[-1] = str(last_octet)
+        ip_candidate = ".".join(ip_parts)
+        test_url = url.replace(parsed.hostname, ip_candidate)
+
+        if test_ffmpeg_rtsp(test_url):
+            return last_octet
+
+    return None
