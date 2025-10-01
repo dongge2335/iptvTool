@@ -1,0 +1,25 @@
+{
+  "workers": 12,
+  "timeshift": "{utc:YmdHMS}GMT-{utcend:YmdHMS}GMT",
+  "group_title_map_by_channel_name_keywords": {
+    "CCTV": "央视频道",
+    "CGTN": "央视频道",
+    "卫视": "卫视频道"
+  },
+  "tvg_name_map_by_tvg_id": {
+    "8": "CCTV5+"
+  },
+  "tvg_name_map_by_tvg_name": {
+    "CCTV少儿": "CCTV14",
+    "CCTV4中文国际欧洲": "CCTV4欧洲",
+    "CCTV4中文国际美洲": "CCTV4美洲",
+    "CCTV17农业": "CCTV17",
+    "CGTN英语": "CGTN",
+    "CGTN英文纪录": "CGTN纪录",
+    "CGTN西班牙语": "CGTN西语",
+    "CGTN阿拉伯语": "CGTN阿语"
+  },
+  "channel_name_map_by_tvg_id": {
+    "8": "CCTV5+高清"
+  }
+}

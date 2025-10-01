@@ -1,0 +1,11 @@
+{
+  "url_tvg": "https://raw.githubusercontent.com/plsy1/epg/main/e/seven-days.xml.gz",
+  "logo_base": "https://raw.githubusercontent.com/plsy1/iptv/main/logo/",
+  "udpxy_base_url": "http://192.168.0.1:4022",
+  "exclude_channel_list_public": [],
+  "exclude_channel_list_private": [
+    "居家购物",
+    "优购物",
+    "央广购物"
+  ]
+}

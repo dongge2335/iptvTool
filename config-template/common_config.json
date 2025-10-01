@@ -1,0 +1,10 @@
+{
+    "data_dir": "data",
+    "playlist_dir": "playlist",
+    "raw_file_name": "raw.json",
+    "formatted_file_name": "iptv.json",
+    "sort_file_name": "config/channel_sort",
+    "channel_list_file_name": "channel_list",
+    "channel_list_change_file_name": "channel_change.md",
+    "channel_list_markdown_file_name": "channels.md"
+}

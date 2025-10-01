@@ -1,0 +1,14 @@
+{
+    "workers": 12,
+    "playback_offset": 7,
+    "input_file_path": "data/iptv.json",
+    "raw_file_path": "data/raw.json",
+    "channel_list_file_path": "data/channel_list",
+    "channel_list_change_file_path": "data/channel_change.md",
+    "auth_test_channel_name": "茶高清",
+    "process_channel_keywords": [
+        "CCTV",
+        "卫视",
+        "CGTN"
+    ]
+}
