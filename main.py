@@ -11,8 +11,8 @@ CONFIG_PATH = "config"
 cfg = Config(CONFIG_PATH)
 common_config = cfg.get_common_config()
 
-Path(common_config.get("data_dir")).parent.mkdir(parents=True, exist_ok=True)
-Path(common_config.get("playlist_dir")).parent.mkdir(parents=True, exist_ok=True)
+Path(common_config.get("data_dir")).mkdir(parents=True, exist_ok=True)
+Path(common_config.get("playlist_dir")).mkdir(parents=True, exist_ok=True)
 
 
 def fetch():
@@ -132,7 +132,7 @@ def main():
     elif args.command == "all":
         process_all()
     else:
-        print("Invalid command")
+        parser.print_help()
 
 
 if __name__ == "__main__":

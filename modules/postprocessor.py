@@ -80,8 +80,10 @@ class PostProcessor:
                     self.channel_list_change_file_path, "a", encoding="utf-8"
                 ) as f:
                     f.write(f"#### 时间: {now_str}\n\n")
-                    f.write("上线频道: " + ", ".join(added) + "\n\n")
-                    f.write("下线频道: " + ", ".join(removed) + "\n\n")
+                    if added:
+                        f.write("上线频道: " + ", ".join(added) + "\n\n")
+                    if removed:
+                        f.write("下线频道: " + ", ".join(removed) + "\n\n")
 
             with open(self.channel_list_file_path, "w", encoding="utf-8") as f:
                 for name in json_channel_names:
