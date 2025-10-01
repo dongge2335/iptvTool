@@ -1,5 +1,4 @@
 import json, re
-from pathlib import Path
 from .helper import *
 from .config import *
 from .STB import IPTVClient
@@ -49,11 +48,12 @@ def gen_iptv_json():
         ch
         for ch in results
         if not any(
-            ch.get("ChannelName", "").startswith(local) for local in exclude_channel_list
+            ch.get("ChannelName", "").startswith(local)
+            for local in exclude_channel_list
         )
     ]
 
-    with open("data/iptv-no-local.json", "w", encoding="utf-8") as f:
+    with open("data/iptv-filtered.json", "w", encoding="utf-8") as f:
         json.dump(filtered_results, f, ensure_ascii=False, indent=2)
 
     if not_found:
@@ -67,7 +67,7 @@ def gen_m3u_playlist(
     json_file="data/iptv.json",
     mode: str = "uni",
     sort_file: str | None = None,
-    generate_local_channel: bool = False,
+    filter: bool = False,
 ) -> None:
     """
     生成 M3U 播放列表，可按 sort_file 指定顺序写入
@@ -113,10 +113,9 @@ def gen_m3u_playlist(
 
         channels = ordered_channels + high_channels + low_channels
 
-    if mode == "uni":
-        output_file = f"{output_path}/unicast.m3u"
-    elif mode == "mul":
-        output_file = f"{output_path}/multicast.m3u"
+    prefix = {"uni": "unicast", "mul": "multicast"}[mode]
+    suffix = "-filtered" if filter else ""
+    output_file = f"{output_path}/{prefix}{suffix}.m3u"
 
     with Path(output_file).open("w", encoding="utf-8") as fp:
         fp.write(f'#EXTM3U url-tvg="{url_tvg}" \n')
@@ -127,8 +126,15 @@ def gen_m3u_playlist(
                 continue
 
             tvg_name = ch.get("tvg_name", "")
+            ChannelName = ch.get("ChannelName")
 
-            if not generate_local_channel and any(
+            if not filter and any(
+                local == ChannelName for local in exclude_channel_list_myself
+            ):
+                print(f"过滤 {ChannelName}")
+                continue
+
+            if filter and any(
                 tvg_name.startswith(local) for local in exclude_channel_list
             ):
                 continue
@@ -139,7 +145,7 @@ def gen_m3u_playlist(
             if mode == "uni":
                 url = ch.get("uni_live", "")
             elif mode == "mul":
-                url = ch.get("udpxy_url", "").replace("rtp://", "rtp/")
+                url = ch.get("mul_live", "").replace("rtp://", "rtp/")
                 url = f"{udpxy_base_url}/{url}"
             if not url:
                 continue
@@ -368,7 +374,7 @@ def json_to_md_table(json_file="data/iptv.json", md_file="data/channels.md"):
         if any(tvg_name.startswith(local) for local in exclude_channel_list):
             continue
 
-        channel_url = ch.get("udpxy_url", "")
+        channel_url = ch.get("mul_live", "")
         mcast_number = ""
         if channel_url.startswith("rtp://"):
             match = re.search(r"\.(\d+):\d+$", channel_url)
@@ -383,67 +389,59 @@ def json_to_md_table(json_file="data/iptv.json", md_file="data/channels.md"):
     print("频道列表 Markdown 文件 已生成")
 
 
-def process_playback(json_file="data/iptv.json"):
+def process_playback(json_file="data/iptv.json", max_workers=10):
+
+    find_three_days = False
+
     with open(json_file, "r", encoding="utf-8") as f:
         data = json.load(f)
 
-    for channel in data:
-        uni_playback = channel.get("uni_playback")
-        channel_name = channel.get("ChannelName")
+    original_urls = {ch["ChannelName"]: ch.get("uni_playback") for ch in data}
 
-        if not uni_playback or not channel_name:
-            continue
+    results = []
 
-        if not any(
-            ch in channel_name for ch in channel_should_process_playback_address
-        ):
-            continue
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(find_playback, ch, 7) for ch in data]
+        for fut in as_completed(futures):
+            results.append(fut.result())
 
-        # if any(
-        #     channel_name.startswith(ch)
-        #     for ch in channel_should_not_process_playback_address
-        # ):
-        #     continue
+    retry_channels = [
+        ch
+        for ch in results
+        if ch.get("uni_playback") == original_urls.get(ch.get("ChannelName"))
+    ]
 
-        begin_time = get_yyyyMMddHHmmss_time(-5)
-        end_time = get_yyyyMMddHHmmss_time(days=-5, minutes=-30)
+    if retry_channels and find_three_days:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(find_playback, ch, 3) for ch in retry_channels]
+            for fut in as_completed(futures):
+                updated = fut.result()
+                name = updated.get("ChannelName")
+                for i, r in enumerate(results):
+                    if r.get("ChannelName") == name:
+                        results[i] = updated
+                        break
 
-        uni_playback_filled = uni_playback.replace("{utc:YmdHMS}", begin_time).replace(
-            "{utcend:YmdHMS}", end_time
+    results.sort(
+        key=lambda x: (
+            not x["tvg_id"].isdigit(),
+            x["tvg_id"] if not x["tvg_id"].isdigit() else int(x["tvg_id"]),
         )
-
-        if test_ffmpeg_rtsp(uni_playback_filled):
-            print(f"{channel_name}: 原地址可用，跳过.")
-            continue
-
-        success = test_ip_connectivity(
-            uni_playback_filled, 36, 48
-        ) or test_ip_connectivity(uni_playback_filled, 68, 74)
-
-        if success:
-            parsed = urlparse(uni_playback)
-            ip_parts = parsed.hostname.split(".")
-            ip_parts[-1] = str(success)
-            new_ip = ".".join(ip_parts)
-            new_url = uni_playback.replace(parsed.hostname, new_ip)
-            channel["uni_playback"] = new_url
-            print(f"{channel_name}: 找到可用七天回看地址.")
-
-        else:
-            print(f"{channel_name}: 无可用七天回看地址.")
+    )
 
     with open(json_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=4)
+        json.dump(results, f, ensure_ascii=False, indent=4)
 
     filtered_results = [
         ch
-        for ch in data
+        for ch in results
         if not any(
-            ch.get("ChannelName", "").startswith(local) for local in exclude_channel_list
+            ch.get("ChannelName", "").startswith(local)
+            for local in exclude_channel_list
         )
     ]
 
-    with open("data/iptv-no-local.json", "w", encoding="utf-8") as f:
+    with open("data/iptv-filtered.json", "w", encoding="utf-8") as f:
         json.dump(filtered_results, f, ensure_ascii=False, indent=2)
 
     print("回看地址处理完成.")

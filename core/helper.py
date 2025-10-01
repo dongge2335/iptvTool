@@ -99,7 +99,7 @@ def process_channel(channel):
             group_title = title
             break
 
-    udpxy_url = channel["ChannelURL"].replace("igmp://", "rtp://")
+    mul_live = channel["ChannelURL"].replace("igmp://", "rtp://")
     uni_live = ""
     uni_playback = ""
     warnings = None
@@ -128,7 +128,7 @@ def process_channel(channel):
         "tvg_id": tvg_id,
         "tvg_name": tvg_name,
         "group_title": group_title,
-        "udpxy_url": udpxy_url,
+        "mul_live": mul_live,
         "uni_live": uni_live,
         "uni_playback": uni_playback,
     }
@@ -194,3 +194,47 @@ def test_ip_connectivity(url, start=1, end=254):
             return last_octet
 
     return None
+
+
+def find_playback(channel, offset: int):
+    """处理单个频道，返回处理后的 channel dict"""
+    uni_playback = channel.get("uni_playback")
+    channel_name = channel.get("ChannelName")
+
+    if not uni_playback or not channel_name:
+        return channel
+
+    if not any(ch in channel_name for ch in playback_targets):
+        return channel
+
+    if any(channel_name == ch for ch in exclude_playback_targets):
+        return channel
+
+    begin_time = get_yyyyMMddHHmmss_time(days=-offset, minutes=-30)
+    end_time = get_yyyyMMddHHmmss_time(offset)
+
+    uni_playback_filled = uni_playback.replace("{utc:YmdHMS}", begin_time).replace(
+        "{utcend:YmdHMS}", end_time
+    )
+
+    if test_ffmpeg_rtsp(uni_playback_filled):
+        print(f"获取回看地址 offset = {offset}: {channel_name}, 原地址可用，跳过")
+        return channel
+
+    success = test_ip_connectivity(uni_playback_filled, 36, 48) or test_ip_connectivity(
+        uni_playback_filled, 68, 74
+    )
+
+    if success:
+        print(f"获取回看地址 offset = {offset}: {channel_name}, 获取成功")
+        parsed = urlparse(uni_playback)
+        ip_parts = parsed.hostname.split(".")
+        ip_parts[-1] = str(success)
+        new_ip = ".".join(ip_parts)
+        new_url = uni_playback.replace(parsed.hostname, new_ip)
+        channel["uni_playback"] = new_url
+
+    else:
+        print(f"{channel_name} 无可用7天回看地址")
+
+    return channel

@@ -43,7 +43,7 @@ def main():
     )
     parser.add_argument("--max-workers", type=int, default=8, help="ffprobe 并发线程数")
 
-    parser.add_argument("--local", action="store_true", help="生成 M3U 是否包含本地频道")
+    parser.add_argument("--filter", action="store_true", help="生成 M3U 是否启用过滤")
 
     args = parser.parse_args()
 
@@ -60,15 +60,21 @@ def main():
         gen_iptv_json()
     if args.playback:
         process_playback()
+
     if args.m3u:
         if args.mode in ["uni", "all"]:
-            gen_m3u_playlist(
-                mode="uni", sort_file=args.sort_file, generate_local_channel=args.local
-            )
+            gen_m3u_playlist(mode="uni", sort_file=args.sort_file, filter=None)
+            if args.filter:
+                gen_m3u_playlist(
+                    mode="uni", sort_file=args.sort_file, filter=args.filter
+                )
+
         if args.mode in ["mul", "all"]:
-            gen_m3u_playlist(
-                mode="mul", sort_file=args.sort_file, generate_local_channel=args.local
-            )
+            gen_m3u_playlist(mode="mul", sort_file=args.sort_file, filter=None)
+            if args.filter:
+                gen_m3u_playlist(
+                    mode="mul", sort_file=args.sort_file, filter=args.filter
+                )
         json_to_md_table()
 
     if args.diff:
