@@ -54,7 +54,7 @@ def generate_unused(area):
     generator.generate_unused_multicast_m3u(area=area)
 
 
-def process():
+def playback():
     post_processor_config = cfg.get_post_processor_config()
     post_processor = PostProcessor(
         cfg=post_processor_config, common_config=common_config
@@ -81,7 +81,7 @@ def auth():
 def process_all():
     fetch()
     format()
-    generate("private", "taian", True)
+    playback()
 
 
 def main():
@@ -123,7 +123,7 @@ def main():
     elif args.command == "generate_unused":
         generate_unused(args.area)
     elif args.command == "playback":
-        process()
+        playback()
     elif args.command == "diff":
         diff()
     elif args.command == "check":

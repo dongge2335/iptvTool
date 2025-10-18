@@ -50,7 +50,7 @@ class M3UPlaylistGenerator:
                 extinf = f"#EXTINF:-1 "
                 extinf += f",{ch}"
                 f.write(
-                    f"{extinf}\n{f'{self.udpxy_base_url}/rtp/239.253.{area_code}.{ch}:8000'}\n"
+                    f"{extinf}\n{self.udpxy_base_url.format(f'rtp/239.253.{area_code}.{ch}:8000')}\n"
                 )
 
         print(
@@ -76,7 +76,7 @@ class M3UPlaylistGenerator:
         now_str = datetime.now(tz=tz_utc8).strftime("%Y-%m-%d %H:%M:%S")
 
         lines = [
-            "## 📺 频道列表\n",
+            "## 频道列表\n",
             f"**更新时间**: {now_str} UTC+8\n\n"
             f"**频道总数**: {total_channels}\n\n"
             "| 频道名称 | 频道号 | 组播号 |",
@@ -154,7 +154,7 @@ class M3UPlaylistGenerator:
                     else:
                         from helpers.playlist import replace_third_ip_byte
 
-                        url = f"{self.udpxy_base_url}/{replace_third_ip_byte(ch.get('mul_live',''), area_code).replace('rtp://','rtp/')}"
+                        url = f"{self.udpxy_base_url.format(replace_third_ip_byte(ch.get('mul_live', ''), area_code).replace('rtp://', 'rtp/'))}"
 
                     if not url:
                         continue

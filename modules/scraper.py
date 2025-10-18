@@ -73,7 +73,7 @@ class Scraper:
         rand = random.randint(10_000_000, 99_999_999)
         src = f"{rand}${self.encrypt_token}"
         src2 = f"{src}${self.user_id}${self.stb_id}${self.stbIP}${self.mac}${self.custom_str}"
-        from helpers.stb import UnionDesEncrypt
+        from helpers.scraper import UnionDesEncrypt
 
         self.authenticator = UnionDesEncrypt(src2, self.encrypt_key)
         data = {

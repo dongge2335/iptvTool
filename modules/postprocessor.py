@@ -41,12 +41,14 @@ class PostProcessor:
 
     def diff(self):
         try:
-            with open(self.formatted_file_path, "r", encoding="utf-8") as f:
+            with open(self.raw_file_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
 
             json_channel_names = [
                 item["ChannelName"] for item in data if "ChannelName" in item
             ]
+
+
 
             try:
                 with open(self.channel_list_file_path, "r", encoding="utf-8") as f:
